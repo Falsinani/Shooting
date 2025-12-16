@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="ar">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -11,6 +11,7 @@ canvas{display:block}
 </head>
 <body>
 <canvas id="c"></canvas>
+
 <script>
 /* ================= SETUP ================= */
 const canvas=document.getElementById("c");
@@ -28,55 +29,71 @@ resize();addEventListener("resize",resize);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const rand=(a,b)=>a+Math.random()*(b-a);
 
-/* ================= AUDIO ================= */
+/* ================= AUDIO (FIXED) ================= */
 let audioCtx=null;
-function sfx(type){
+function initAudio(){
   if(!audioCtx){
     audioCtx=new (window.AudioContext||webkitAudioContext)();
   }
+  if(audioCtx.state==="suspended") audioCtx.resume();
+}
+function sfx(type){
+  if(!audioCtx) return;
   const t=audioCtx.currentTime;
   const g=audioCtx.createGain();
   g.connect(audioCtx.destination);
+
   if(type==="shoot"){
     const o=audioCtx.createOscillator();
     o.type="sawtooth";
-    o.frequency.setValueAtTime(160,t);
+    o.frequency.setValueAtTime(180,t);
+    g.gain.setValueAtTime(0.06,t);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.1);
+    o.connect(g);o.start(t);o.stop(t+0.12);
+  }
+  if(type==="laser"){
+    const o=audioCtx.createOscillator();
+    o.type="square";
+    o.frequency.setValueAtTime(600,t);
     g.gain.setValueAtTime(0.05,t);
-    g.gain.exponentialRampToValueAtTime(0.0001,t+0.08);
-    o.connect(g);o.start(t);o.stop(t+0.1);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.15);
+    o.connect(g);o.start(t);o.stop(t+0.18);
   }
   if(type==="boom"){
     const b=audioCtx.createBuffer(1,audioCtx.sampleRate*0.3,audioCtx.sampleRate);
     const d=b.getChannelData(0);
-    for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*(1-i/d.length);
+    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*(1-i/d.length);
     const n=audioCtx.createBufferSource();
     n.buffer=b;
-    g.gain.setValueAtTime(0.2,t);
+    g.gain.setValueAtTime(0.25,t);
     g.gain.exponentialRampToValueAtTime(0.0001,t+0.25);
     n.connect(g);n.start(t);
   }
 }
 
 /* ================= PLAYER ================= */
-const player={
-  x:0,y:0,targetX:0,tilt:0
-};
+const player={x:0,y:0,targetX:0,tilt:0};
+
+/* ================= WEAPONS (FIXED) ================= */
+const WEAPONS=["normal","laser","spread"];
+let weapon="normal";
+let weaponTimer=0;
 
 /* ================= ENTITIES ================= */
 const rockets=[];
 const asteroids=[];
-const particles=[];
 const drops=[];
 
 /* ================= INPUT ================= */
 canvas.addEventListener("pointerdown",e=>{
+  initAudio();
   player.targetX=e.clientX;
 });
 canvas.addEventListener("pointermove",e=>{
   player.targetX=e.clientX;
 });
 
-/* ================= DRAW FUNCTIONS ================= */
+/* ================= DRAW ================= */
 function drawBackground(){
   const g=ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,"#060b16");
@@ -84,33 +101,20 @@ function drawBackground(){
   ctx.fillStyle=g;
   ctx.fillRect(0,0,W,H);
   ctx.fillStyle="rgba(255,255,255,0.15)";
-  for(let i=0;i<80;i++){
-    ctx.fillRect(Math.random()*W,Math.random()*H,1,1);
-  }
+  for(let i=0;i<60;i++) ctx.fillRect(Math.random()*W,Math.random()*H,1,1);
 }
 
 function drawShuttle(){
   ctx.save();
   ctx.translate(player.x,player.y);
   ctx.rotate(player.tilt);
-  // body
-  ctx.fillStyle="#dfe6ee";
+  ctx.fillStyle="#e4ebf2";
   ctx.beginPath();
-  ctx.moveTo(0,-22);
-  ctx.lineTo(10,18);
-  ctx.lineTo(0,14);
-  ctx.lineTo(-10,18);
-  ctx.closePath();
-  ctx.fill();
-  // wings
-  ctx.fillStyle="#b0b8c2";
-  ctx.fillRect(-18,4,36,4);
-  // engine flame
-  ctx.fillStyle="rgba(255,180,80,0.7)";
+  ctx.moveTo(0,-22);ctx.lineTo(10,18);ctx.lineTo(0,14);ctx.lineTo(-10,18);
+  ctx.closePath();ctx.fill();
+  ctx.fillStyle="rgba(255,170,90,0.7)";
   ctx.beginPath();
-  ctx.moveTo(-4,18);
-  ctx.lineTo(0,30+Math.random()*6);
-  ctx.lineTo(4,18);
+  ctx.moveTo(-4,18);ctx.lineTo(0,30+Math.random()*5);ctx.lineTo(4,18);
   ctx.fill();
   ctx.restore();
 }
@@ -118,13 +122,11 @@ function drawShuttle(){
 function drawRocket(r){
   ctx.save();
   ctx.translate(r.x,r.y);
-  ctx.fillStyle="#eee";
+  ctx.fillStyle=r.type==="laser"?"#6ff":"#fff";
   ctx.fillRect(-2,-8,4,12);
   ctx.fillStyle="rgba(255,160,80,0.6)";
   ctx.beginPath();
-  ctx.moveTo(-2,4);
-  ctx.lineTo(0,10+Math.random()*4);
-  ctx.lineTo(2,4);
+  ctx.moveTo(-2,4);ctx.lineTo(0,10+Math.random()*3);ctx.lineTo(2,4);
   ctx.fill();
   ctx.restore();
 }
@@ -133,31 +135,26 @@ function drawAsteroid(a){
   ctx.save();
   ctx.translate(a.x,a.y);
   ctx.rotate(a.rot);
-  ctx.fillStyle="#6d6a66";
+  ctx.fillStyle="#6c6863";
   ctx.beginPath();
-  a.shape.forEach((p,i)=>{
-    if(i===0)ctx.moveTo(p.x,p.y);
-    else ctx.lineTo(p.x,p.y);
-  });
-  ctx.closePath();
-  ctx.fill();
+  a.shape.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
+  ctx.closePath();ctx.fill();
   ctx.restore();
 }
 
-function drawSatellite(d){
+function drawStation(d){
   ctx.save();
   ctx.translate(d.x,d.y);
   ctx.rotate(d.rot);
   ctx.fillStyle="#cfd6df";
   ctx.beginPath();
-  ctx.arc(0,0,10,0,Math.PI*2);
-  ctx.fill();
+  ctx.arc(0,0,10,0,Math.PI*2);ctx.fill();
   ctx.fillRect(-22,-4,12,8);
   ctx.fillRect(10,-4,12,8);
   ctx.restore();
 }
 
-/* ================= GAME LOGIC ================= */
+/* ================= LOGIC ================= */
 function spawnAsteroid(){
   const pts=[];
   const r=rand(18,32);
@@ -166,17 +163,10 @@ function spawnAsteroid(){
     const a=i/n*Math.PI*2;
     pts.push({x:Math.cos(a)*r*rand(0.6,1),y:Math.sin(a)*r*rand(0.6,1)});
   }
-  asteroids.push({
-    x:rand(40,W-40),
-    y:-40,
-    vy:rand(80,140),
-    rot:rand(-1,1),
-    shape:pts
-  });
+  asteroids.push({x:rand(40,W-40),y:-40,vy:rand(90,150),rot:rand(-1,1),shape:pts});
 }
 
-let shootTimer=0;
-let spawnTimer=0;
+let shootTimer=0,spawnTimer=0;
 
 /* ================= LOOP ================= */
 let last=performance.now();
@@ -184,22 +174,34 @@ function loop(t){
   const dt=(t-last)/1000;last=t;
   drawBackground();
 
-  // player
-  player.x+= (player.targetX-player.x)*8*dt;
+  player.x+=(player.targetX-player.x)*8*dt;
   player.x=clamp(player.x,30,W-30);
   player.tilt=(player.targetX-player.x)*0.002;
   drawShuttle();
 
-  // shooting
-  shootTimer-=dt;
-  if(shootTimer<=0){
-    shootTimer=0.15;
-    rockets.push({x:player.x,y:player.y-24,vy:-500});
-    sfx("shoot");
-    if(navigator.vibrate)navigator.vibrate(5);
+  if(weaponTimer>0){
+    weaponTimer-=dt;
+    if(weaponTimer<=0) weapon="normal";
   }
 
-  // rockets
+  shootTimer-=dt;
+  if(shootTimer<=0){
+    shootTimer=0.18;
+    if(weapon==="spread"){
+      for(let i=-1;i<=1;i++){
+        rockets.push({x:player.x+i*6,y:player.y-24,vy:-450,type:"normal"});
+      }
+      sfx("shoot");
+    }else if(weapon==="laser"){
+      rockets.push({x:player.x,y:player.y-24,vy:-700,type:"laser"});
+      sfx("laser");
+    }else{
+      rockets.push({x:player.x,y:player.y-24,vy:-500,type:"normal"});
+      sfx("shoot");
+    }
+    navigator.vibrate?.(5);
+  }
+
   for(let i=rockets.length-1;i>=0;i--){
     const r=rockets[i];
     r.y+=r.vy*dt;
@@ -207,42 +209,30 @@ function loop(t){
     if(r.y<-20)rockets.splice(i,1);
   }
 
-  // asteroids
   spawnTimer-=dt;
-  if(spawnTimer<=0){
-    spawnTimer=rand(0.4,0.7);
-    spawnAsteroid();
-  }
+  if(spawnTimer<=0){spawnTimer=rand(0.5,0.8);spawnAsteroid();}
   for(let i=asteroids.length-1;i>=0;i--){
     const a=asteroids[i];
-    a.y+=a.vy*dt;
-    a.rot+=0.3*dt;
+    a.y+=a.vy*dt;a.rot+=0.3*dt;
     drawAsteroid(a);
-    if(a.y>H+50)asteroids.splice(i,1);
-
-    // collision
     for(let j=rockets.length-1;j>=0;j--){
-      const r=rockets[j];
-      if(Math.hypot(a.x-r.x,a.y-r.y)<28){
-        rockets.splice(j,1);
-        asteroids.splice(i,1);
-        sfx("boom");
-        if(navigator.vibrate)navigator.vibrate(25);
-        if(Math.random()<0.3){
-          drops.push({x:a.x,y:a.y,vy:80,rot:0});
+      if(Math.hypot(a.x-rockets[j].x,a.y-rockets[j].y)<28){
+        rockets.splice(j,1);asteroids.splice(i,1);
+        sfx("boom");navigator.vibrate?.(25);
+        if(Math.random()<0.4){
+          drops.push({x:a.x,y:a.y,vy:80,rot:0,type:WEAPONS[Math.floor(Math.random()*WEAPONS.length)]});
         }
         break;
       }
     }
   }
 
-  // drops
   for(let i=drops.length-1;i>=0;i--){
     const d=drops[i];
-    d.y+=d.vy*dt;
-    d.rot+=0.5*dt;
-    drawSatellite(d);
+    d.y+=d.vy*dt;d.rot+=0.6*dt;
+    drawStation(d);
     if(Math.hypot(d.x-player.x,d.y-player.y)<24){
+      weapon=d.type;weaponTimer=8;
       drops.splice(i,1);
     }
     if(d.y>H+40)drops.splice(i,1);
