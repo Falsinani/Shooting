@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Space Shuttle Blaster</title>
+<style>
+html,body{margin:0;padding:0;background:#05070b;overflow:hidden;touch-action:none}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+/* ================= SETUP ================= */
+const canvas=document.getElementById("c");
+const ctx=canvas.getContext("2d");
+let W,H,DPR;
+function resize(){
+  DPR=Math.min(2,devicePixelRatio||1);
+  W=innerWidth;H=innerHeight;
+  canvas.width=W*DPR;canvas.height=H*DPR;
+  canvas.style.width=W+"px";canvas.style.height=H+"px";
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+resize();addEventListener("resize",resize);
+
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const rand=(a,b)=>a+Math.random()*(b-a);
+
+/* ================= AUDIO ================= */
+let audioCtx=null;
+function sfx(type){
+  if(!audioCtx){
+    audioCtx=new (window.AudioContext||webkitAudioContext)();
+  }
+  const t=audioCtx.currentTime;
+  const g=audioCtx.createGain();
+  g.connect(audioCtx.destination);
+  if(type==="shoot"){
+    const o=audioCtx.createOscillator();
+    o.type="sawtooth";
+    o.frequency.setValueAtTime(160,t);
+    g.gain.setValueAtTime(0.05,t);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.08);
+    o.connect(g);o.start(t);o.stop(t+0.1);
+  }
+  if(type==="boom"){
+    const b=audioCtx.createBuffer(1,audioCtx.sampleRate*0.3,audioCtx.sampleRate);
+    const d=b.getChannelData(0);
+    for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*(1-i/d.length);
+    const n=audioCtx.createBufferSource();
+    n.buffer=b;
+    g.gain.setValueAtTime(0.2,t);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.25);
+    n.connect(g);n.start(t);
+  }
+}
+
+/* ================= PLAYER ================= */
+const player={
+  x:0,y:0,targetX:0,tilt:0
+};
+
+/* ================= ENTITIES ================= */
+const rockets=[];
+const asteroids=[];
+const particles=[];
+const drops=[];
+
+/* ================= INPUT ================= */
+canvas.addEventListener("pointerdown",e=>{
+  player.targetX=e.clientX;
+});
+canvas.addEventListener("pointermove",e=>{
+  player.targetX=e.clientX;
+});
+
+/* ================= DRAW FUNCTIONS ================= */
+function drawBackground(){
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,"#060b16");
+  g.addColorStop(1,"#02040a");
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="rgba(255,255,255,0.15)";
+  for(let i=0;i<80;i++){
+    ctx.fillRect(Math.random()*W,Math.random()*H,1,1);
+  }
+}
+
+function drawShuttle(){
+  ctx.save();
+  ctx.translate(player.x,player.y);
+  ctx.rotate(player.tilt);
+  // body
+  ctx.fillStyle="#dfe6ee";
+  ctx.beginPath();
+  ctx.moveTo(0,-22);
+  ctx.lineTo(10,18);
+  ctx.lineTo(0,14);
+  ctx.lineTo(-10,18);
+  ctx.closePath();
+  ctx.fill();
+  // wings
+  ctx.fillStyle="#b0b8c2";
+  ctx.fillRect(-18,4,36,4);
+  // engine flame
+  ctx.fillStyle="rgba(255,180,80,0.7)";
+  ctx.beginPath();
+  ctx.moveTo(-4,18);
+  ctx.lineTo(0,30+Math.random()*6);
+  ctx.lineTo(4,18);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawRocket(r){
+  ctx.save();
+  ctx.translate(r.x,r.y);
+  ctx.fillStyle="#eee";
+  ctx.fillRect(-2,-8,4,12);
+  ctx.fillStyle="rgba(255,160,80,0.6)";
+  ctx.beginPath();
+  ctx.moveTo(-2,4);
+  ctx.lineTo(0,10+Math.random()*4);
+  ctx.lineTo(2,4);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawAsteroid(a){
+  ctx.save();
+  ctx.translate(a.x,a.y);
+  ctx.rotate(a.rot);
+  ctx.fillStyle="#6d6a66";
+  ctx.beginPath();
+  a.shape.forEach((p,i)=>{
+    if(i===0)ctx.moveTo(p.x,p.y);
+    else ctx.lineTo(p.x,p.y);
+  });
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSatellite(d){
+  ctx.save();
+  ctx.translate(d.x,d.y);
+  ctx.rotate(d.rot);
+  ctx.fillStyle="#cfd6df";
+  ctx.beginPath();
+  ctx.arc(0,0,10,0,Math.PI*2);
+  ctx.fill();
+  ctx.fillRect(-22,-4,12,8);
+  ctx.fillRect(10,-4,12,8);
+  ctx.restore();
+}
+
+/* ================= GAME LOGIC ================= */
+function spawnAsteroid(){
+  const pts=[];
+  const r=rand(18,32);
+  const n=rand(6,9);
+  for(let i=0;i<n;i++){
+    const a=i/n*Math.PI*2;
+    pts.push({x:Math.cos(a)*r*rand(0.6,1),y:Math.sin(a)*r*rand(0.6,1)});
+  }
+  asteroids.push({
+    x:rand(40,W-40),
+    y:-40,
+    vy:rand(80,140),
+    rot:rand(-1,1),
+    shape:pts
+  });
+}
+
+let shootTimer=0;
+let spawnTimer=0;
+
+/* ================= LOOP ================= */
+let last=performance.now();
+function loop(t){
+  const dt=(t-last)/1000;last=t;
+  drawBackground();
+
+  // player
+  player.x+= (player.targetX-player.x)*8*dt;
+  player.x=clamp(player.x,30,W-30);
+  player.tilt=(player.targetX-player.x)*0.002;
+  drawShuttle();
+
+  // shooting
+  shootTimer-=dt;
+  if(shootTimer<=0){
+    shootTimer=0.15;
+    rockets.push({x:player.x,y:player.y-24,vy:-500});
+    sfx("shoot");
+    if(navigator.vibrate)navigator.vibrate(5);
+  }
+
+  // rockets
+  for(let i=rockets.length-1;i>=0;i--){
+    const r=rockets[i];
+    r.y+=r.vy*dt;
+    drawRocket(r);
+    if(r.y<-20)rockets.splice(i,1);
+  }
+
+  // asteroids
+  spawnTimer-=dt;
+  if(spawnTimer<=0){
+    spawnTimer=rand(0.4,0.7);
+    spawnAsteroid();
+  }
+  for(let i=asteroids.length-1;i>=0;i--){
+    const a=asteroids[i];
+    a.y+=a.vy*dt;
+    a.rot+=0.3*dt;
+    drawAsteroid(a);
+    if(a.y>H+50)asteroids.splice(i,1);
+
+    // collision
+    for(let j=rockets.length-1;j>=0;j--){
+      const r=rockets[j];
+      if(Math.hypot(a.x-r.x,a.y-r.y)<28){
+        rockets.splice(j,1);
+        asteroids.splice(i,1);
+        sfx("boom");
+        if(navigator.vibrate)navigator.vibrate(25);
+        if(Math.random()<0.3){
+          drops.push({x:a.x,y:a.y,vy:80,rot:0});
+        }
+        break;
+      }
+    }
+  }
+
+  // drops
+  for(let i=drops.length-1;i>=0;i--){
+    const d=drops[i];
+    d.y+=d.vy*dt;
+    d.rot+=0.5*dt;
+    drawSatellite(d);
+    if(Math.hypot(d.x-player.x,d.y-player.y)<24){
+      drops.splice(i,1);
+    }
+    if(d.y>H+40)drops.splice(i,1);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+player.x=W/2;player.y=H-80;player.targetX=player.x;
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
