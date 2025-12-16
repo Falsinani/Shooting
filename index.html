@@ -5,12 +5,38 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Space Shuttle Blaster</title>
 <style>
-html,body{margin:0;padding:0;background:#05070b;overflow:hidden;touch-action:none}
+html,body{
+  margin:0;padding:0;background:#05070b;overflow:hidden;
+  touch-action:none;font-family:system-ui,-apple-system,Segoe UI
+}
 canvas{display:block}
+
+/* ===== HUD ===== */
+#hud{
+  position:fixed;top:0;left:0;right:0;
+  display:flex;justify-content:space-between;align-items:center;
+  padding:10px 14px;
+  pointer-events:none;
+  color:#eaf2ff;font-size:13px;
+}
+.hud-box{
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:14px;
+  padding:6px 10px;
+  backdrop-filter:blur(6px);
+}
 </style>
 </head>
 <body>
+
 <canvas id="c"></canvas>
+
+<div id="hud">
+  <div class="hud-box">💥 <span id="score">0</span></div>
+  <div class="hud-box">🔫 <span id="weapon">NORMAL</span></div>
+  <div class="hud-box">⚡ <span id="timer">0</span>s</div>
+</div>
 
 <script>
 /* ================= SETUP ================= */
@@ -29,54 +55,59 @@ resize();addEventListener("resize",resize);
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const rand=(a,b)=>a+Math.random()*(b-a);
 
-/* ================= AUDIO (FIXED) ================= */
-let audioCtx=null;
-function initAudio(){
-  if(!audioCtx){
-    audioCtx=new (window.AudioContext||webkitAudioContext)();
-  }
-  if(audioCtx.state==="suspended") audioCtx.resume();
-}
-function sfx(type){
-  if(!audioCtx) return;
-  const t=audioCtx.currentTime;
-  const g=audioCtx.createGain();
-  g.connect(audioCtx.destination);
+/* ================= AUDIO (100% iOS SAFE) ================= */
+let audioCtx=null, audioUnlocked=false;
 
-  if(type==="shoot"){
-    const o=audioCtx.createOscillator();
-    o.type="sawtooth";
-    o.frequency.setValueAtTime(180,t);
-    g.gain.setValueAtTime(0.06,t);
-    g.gain.exponentialRampToValueAtTime(0.0001,t+0.1);
-    o.connect(g);o.start(t);o.stop(t+0.12);
-  }
-  if(type==="laser"){
-    const o=audioCtx.createOscillator();
-    o.type="square";
-    o.frequency.setValueAtTime(600,t);
-    g.gain.setValueAtTime(0.05,t);
-    g.gain.exponentialRampToValueAtTime(0.0001,t+0.15);
-    o.connect(g);o.start(t);o.stop(t+0.18);
-  }
-  if(type==="boom"){
-    const b=audioCtx.createBuffer(1,audioCtx.sampleRate*0.3,audioCtx.sampleRate);
-    const d=b.getChannelData(0);
-    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*(1-i/d.length);
-    const n=audioCtx.createBufferSource();
-    n.buffer=b;
-    g.gain.setValueAtTime(0.25,t);
-    g.gain.exponentialRampToValueAtTime(0.0001,t+0.25);
-    n.connect(g);n.start(t);
-  }
+function unlockAudio(){
+  if(audioUnlocked) return;
+  audioCtx=new (window.AudioContext||webkitAudioContext)();
+  const buffer=audioCtx.createBuffer(1,1,audioCtx.sampleRate);
+  const src=audioCtx.createBufferSource();
+  src.buffer=buffer;
+  src.connect(audioCtx.destination);
+  src.start(0);
+  audioUnlocked=true;
+}
+
+function sfxShoot(){
+  if(!audioUnlocked) return;
+  const t=audioCtx.currentTime;
+  const o=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  o.type="sawtooth";
+  o.frequency.setValueAtTime(180,t);
+  g.gain.setValueAtTime(0.07,t);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.12);
+  o.connect(g);g.connect(audioCtx.destination);
+  o.start(t);o.stop(t+0.14);
+}
+
+function sfxBoom(){
+  if(!audioUnlocked) return;
+  const t=audioCtx.currentTime;
+  const b=audioCtx.createBuffer(1,audioCtx.sampleRate*0.3,audioCtx.sampleRate);
+  const d=b.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*(1-i/d.length);
+  const n=audioCtx.createBufferSource();
+  const g=audioCtx.createGain();
+  n.buffer=b;
+  g.gain.setValueAtTime(0.35,t);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.3);
+  n.connect(g);g.connect(audioCtx.destination);
+  n.start(t);
 }
 
 /* ================= PLAYER ================= */
 const player={x:0,y:0,targetX:0,tilt:0};
 
-/* ================= WEAPONS (FIXED) ================= */
-const WEAPONS=["normal","laser","spread"];
-let weapon="normal";
+/* ================= GAME STATE ================= */
+let score=0;
+const scoreEl=document.getElementById("score");
+const weaponEl=document.getElementById("weapon");
+const timerEl=document.getElementById("timer");
+
+/* ================= WEAPONS ================= */
+let weapon="NORMAL";
 let weaponTimer=0;
 
 /* ================= ENTITIES ================= */
@@ -86,7 +117,7 @@ const drops=[];
 
 /* ================= INPUT ================= */
 canvas.addEventListener("pointerdown",e=>{
-  initAudio();
+  unlockAudio();
   player.targetX=e.clientX;
 });
 canvas.addEventListener("pointermove",e=>{
@@ -96,25 +127,29 @@ canvas.addEventListener("pointermove",e=>{
 /* ================= DRAW ================= */
 function drawBackground(){
   const g=ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,"#060b16");
+  g.addColorStop(0,"#070d1d");
   g.addColorStop(1,"#02040a");
   ctx.fillStyle=g;
   ctx.fillRect(0,0,W,H);
-  ctx.fillStyle="rgba(255,255,255,0.15)";
-  for(let i=0;i<60;i++) ctx.fillRect(Math.random()*W,Math.random()*H,1,1);
 }
 
 function drawShuttle(){
   ctx.save();
   ctx.translate(player.x,player.y);
   ctx.rotate(player.tilt);
-  ctx.fillStyle="#e4ebf2";
+  ctx.fillStyle="#e5edf5";
   ctx.beginPath();
-  ctx.moveTo(0,-22);ctx.lineTo(10,18);ctx.lineTo(0,14);ctx.lineTo(-10,18);
-  ctx.closePath();ctx.fill();
-  ctx.fillStyle="rgba(255,170,90,0.7)";
+  ctx.moveTo(0,-22);
+  ctx.lineTo(10,18);
+  ctx.lineTo(0,14);
+  ctx.lineTo(-10,18);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle="rgba(255,170,90,0.6)";
   ctx.beginPath();
-  ctx.moveTo(-4,18);ctx.lineTo(0,30+Math.random()*5);ctx.lineTo(4,18);
+  ctx.moveTo(-4,18);
+  ctx.lineTo(0,30+Math.random()*4);
+  ctx.lineTo(4,18);
   ctx.fill();
   ctx.restore();
 }
@@ -122,12 +157,8 @@ function drawShuttle(){
 function drawRocket(r){
   ctx.save();
   ctx.translate(r.x,r.y);
-  ctx.fillStyle=r.type==="laser"?"#6ff":"#fff";
+  ctx.fillStyle=r.type==="LASER"?"#6ff":"#fff";
   ctx.fillRect(-2,-8,4,12);
-  ctx.fillStyle="rgba(255,160,80,0.6)";
-  ctx.beginPath();
-  ctx.moveTo(-2,4);ctx.lineTo(0,10+Math.random()*3);ctx.lineTo(2,4);
-  ctx.fill();
   ctx.restore();
 }
 
@@ -181,24 +212,23 @@ function loop(t){
 
   if(weaponTimer>0){
     weaponTimer-=dt;
-    if(weaponTimer<=0) weapon="normal";
+    timerEl.textContent=Math.ceil(weaponTimer);
+    if(weaponTimer<=0){
+      weapon="NORMAL";
+      weaponEl.textContent="NORMAL";
+      timerEl.textContent="0";
+    }
   }
 
   shootTimer-=dt;
   if(shootTimer<=0){
     shootTimer=0.18;
-    if(weapon==="spread"){
-      for(let i=-1;i<=1;i++){
-        rockets.push({x:player.x+i*6,y:player.y-24,vy:-450,type:"normal"});
-      }
-      sfx("shoot");
-    }else if(weapon==="laser"){
-      rockets.push({x:player.x,y:player.y-24,vy:-700,type:"laser"});
-      sfx("laser");
+    if(weapon==="LASER"){
+      rockets.push({x:player.x,y:player.y-24,vy:-700,type:"LASER"});
     }else{
-      rockets.push({x:player.x,y:player.y-24,vy:-500,type:"normal"});
-      sfx("shoot");
+      rockets.push({x:player.x,y:player.y-24,vy:-500,type:"NORMAL"});
     }
+    sfxShoot();
     navigator.vibrate?.(5);
   }
 
@@ -211,16 +241,21 @@ function loop(t){
 
   spawnTimer-=dt;
   if(spawnTimer<=0){spawnTimer=rand(0.5,0.8);spawnAsteroid();}
+
   for(let i=asteroids.length-1;i>=0;i--){
     const a=asteroids[i];
     a.y+=a.vy*dt;a.rot+=0.3*dt;
     drawAsteroid(a);
     for(let j=rockets.length-1;j>=0;j--){
       if(Math.hypot(a.x-rockets[j].x,a.y-rockets[j].y)<28){
-        rockets.splice(j,1);asteroids.splice(i,1);
-        sfx("boom");navigator.vibrate?.(25);
-        if(Math.random()<0.4){
-          drops.push({x:a.x,y:a.y,vy:80,rot:0,type:WEAPONS[Math.floor(Math.random()*WEAPONS.length)]});
+        rockets.splice(j,1);
+        asteroids.splice(i,1);
+        score++;
+        scoreEl.textContent=score;
+        sfxBoom();
+        navigator.vibrate?.(25);
+        if(Math.random()<0.35){
+          drops.push({x:a.x,y:a.y,vy:80,rot:0});
         }
         break;
       }
@@ -232,7 +267,9 @@ function loop(t){
     d.y+=d.vy*dt;d.rot+=0.6*dt;
     drawStation(d);
     if(Math.hypot(d.x-player.x,d.y-player.y)<24){
-      weapon=d.type;weaponTimer=8;
+      weapon="LASER";
+      weaponTimer=8;
+      weaponEl.textContent="LASER";
       drops.splice(i,1);
     }
     if(d.y>H+40)drops.splice(i,1);
