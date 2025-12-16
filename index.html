@@ -2,195 +2,193 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<title>Barrier Blaster</title>
+<title>Energy Breaker</title>
 
 <meta name="viewport"
 content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 
 <style>
-html, body {
-  margin:0;
-  padding:0;
-  width:100%;
-  height:100%;
-  background:#0b1020;
+html,body{
+  margin:0; padding:0;
+  width:100%; height:100%;
+  background:#070b1a;
   overflow:hidden;
   touch-action:none;
   overscroll-behavior:none;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto;
 }
-
-* {
-  -webkit-touch-callout:none;
+*{
   -webkit-user-select:none;
   user-select:none;
+  -webkit-touch-callout:none;
 }
-
-canvas {
-  width:100vw;
-  height:100vh;
-  display:block;
+canvas{display:block;width:100vw;height:100vh}
+#hud{
+  position:fixed;top:10px;left:10px;right:10px;
+  display:flex;justify-content:space-between;
+  color:#fff;font-size:14px;
+}
+.badge{
+  background:rgba(255,255,255,.08);
+  padding:8px 12px;
+  border-radius:12px;
+  backdrop-filter:blur(6px);
 }
 </style>
 </head>
 
 <body>
-<canvas id="game"></canvas>
+<div id="hud">
+  <div class="badge">💥 محطّمة: <b id="broken">0</b></div>
+  <div class="badge">🔫 السلاح: <b id="weapon">عادي</b></div>
+</div>
+<canvas id="c"></canvas>
 
 <script>
-// ================== iOS SAFETY ==================
-document.addEventListener('gesturestart', e => e.preventDefault());
-document.addEventListener('dblclick', e => e.preventDefault(), { passive:false });
+// ================= SAFETY =================
+document.addEventListener("gesturestart",e=>e.preventDefault());
+document.addEventListener("dblclick",e=>e.preventDefault(),{passive:false});
 
-// ================== CANVAS ==================
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-let W, H, DPR;
-
+// ================= CANVAS =================
+const c=document.getElementById("c"),ctx=c.getContext("2d");
+let W,H,DPR;
 function resize(){
-  DPR = Math.min(2, window.devicePixelRatio || 1);
-  W = innerWidth;
-  H = innerHeight;
-  canvas.width = W * DPR;
-  canvas.height = H * DPR;
+  DPR=Math.min(2,devicePixelRatio||1);
+  W=innerWidth;H=innerHeight;
+  c.width=W*DPR;c.height=H*DPR;
   ctx.setTransform(DPR,0,0,DPR,0,0);
 }
-addEventListener("resize", resize);
-resize();
+addEventListener("resize",resize);resize();
 
-// ================== AUDIO ==================
-const bgMusic = new Audio(
-  "https://cdn.pixabay.com/audio/2022/10/26/audio_48c7baf798.mp3"
-);
-bgMusic.loop = true;
-bgMusic.volume = 0.35;
-let musicStarted = false;
-
-// ================== HAPTIC ==================
-function haptic(ms=20){
-  if (navigator.vibrate) navigator.vibrate(ms);
+// ================= AUDIO (FIXED iOS) =================
+let audioCtx=null, musicOsc=null;
+function startAudio(){
+  if(audioCtx) return;
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  musicOsc=audioCtx.createOscillator();
+  const gain=audioCtx.createGain();
+  musicOsc.type="sine";
+  musicOsc.frequency.value=90;
+  gain.gain.value=0.03;
+  musicOsc.connect(gain).connect(audioCtx.destination);
+  musicOsc.start();
+}
+function sfx(freq,dur=0.05){
+  if(!audioCtx) return;
+  const o=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  o.frequency.value=freq;
+  g.gain.value=0.08;
+  o.connect(g).connect(audioCtx.destination);
+  o.start();
+  o.stop(audioCtx.currentTime+dur);
 }
 
-// ================== GAME STATE ==================
-let last = performance.now();
-let energy = 1;
-let cooldown = 0;
+// ================= HAPTIC =================
+function haptic(ms){ if(navigator.vibrate) navigator.vibrate(ms); }
 
-const player = {
-  x: W/2,
-  y: H - 100,
-  w: 40,
-  h: 40
-};
+// ================= GAME =================
+const player={x:W/2,y:H-90,w:40,h:40};
+let dragging=false,lastX=0;
+let bullets=[],objects=[],particles=[];
+let cooldown=0,energy=1;
+let broken=0;
+let weapon="normal",weaponTimer=0;
 
-const bullets = [];
-const barriers = [];
-const particles = [];
+const brokenEl=document.getElementById("broken");
+const weaponEl=document.getElementById("weapon");
 
-let score = 0;
-let spawnTimer = 0;
-
-// ================== INPUT (DRAG) ==================
-let dragging = false;
-let lastX = 0;
-
-canvas.addEventListener("pointerdown", e => {
-  dragging = true;
-  lastX = e.clientX;
-  canvas.setPointerCapture(e.pointerId);
-
-  if (!musicStarted){
-    bgMusic.play().catch(()=>{});
-    musicStarted = true;
-  }
+c.addEventListener("pointerdown",e=>{
+  dragging=true;lastX=e.clientX;
+  c.setPointerCapture(e.pointerId);
+  startAudio();
 });
-
-canvas.addEventListener("pointermove", e => {
-  if (!dragging) return;
-  const dx = e.clientX - lastX;
-  lastX = e.clientX;
-
-  player.x += dx * 1.4;
-  player.x = Math.max(player.w/2+10, Math.min(W-player.w/2-10, player.x));
+c.addEventListener("pointermove",e=>{
+  if(!dragging) return;
+  const dx=e.clientX-lastX;
+  lastX=e.clientX;
+  player.x+=dx*1.4;
+  player.x=Math.max(30,Math.min(W-30,player.x));
 });
+c.addEventListener("pointerup",()=>dragging=false);
+c.addEventListener("pointercancel",()=>dragging=false);
 
-canvas.addEventListener("pointerup", ()=> dragging=false);
-canvas.addEventListener("pointercancel", ()=> dragging=false);
-
-// ================== HELPERS ==================
-const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
-const rnd = (a,b)=>a+Math.random()*(b-a);
-
-// ================== GAME LOGIC ==================
-function shoot(){
-  if (cooldown>0 || energy<0.08) return;
-
-  bullets.push({
-    x: player.x,
-    y: player.y - 20,
-    r: 6,
-    v: -800
-  });
-
-  energy -= 0.08;
-  cooldown = 0.12;
-  haptic(10);
-}
-
-function spawnBarrier(){
-  barriers.push({
-    x: rnd(30, W-80),
-    y: -60,
-    w: rnd(50,90),
-    h: rnd(35,60),
-    hp: 3
+function spawn(){
+  const isPower=Math.random()<0.25;
+  objects.push({
+    x:Math.random()*(W-80)+40,
+    y:-60,
+    r:isPower?18:26,
+    type:isPower?"power":"barrier",
+    kind:Math.random()<0.5?"laser":"spread"
   });
 }
 
-function explode(x,y,power=1){
-  haptic(40);
-  for(let i=0;i<20*power;i++){
+function explode(x,y,color){
+  haptic(40); sfx(120,0.1);
+  for(let i=0;i<20;i++)
     particles.push({
       x,y,
-      vx:rnd(-300,300),
-      vy:rnd(-300,300),
-      life:rnd(0.3,0.6)
+      vx:(Math.random()-0.5)*400,
+      vy:(Math.random()-0.5)*400,
+      life:0.6,
+      color
     });
-  }
 }
 
-function update(dt){
-  energy = clamp(energy + dt*0.25, 0, 1);
-  cooldown = Math.max(0, cooldown-dt);
+function shoot(){
+  if(cooldown>0||energy<0.08) return;
+  sfx(400); haptic(10);
+  if(weapon==="laser"){
+    bullets.push({x:player.x,y:player.y-30,v:-1200,r:4,laser:true});
+  }else if(weapon==="spread"){
+    for(let a=-0.4;a<=0.4;a+=0.4)
+      bullets.push({x:player.x,y:player.y-30,v:-700,r:5,dx:a});
+  }else{
+    bullets.push({x:player.x,y:player.y-30,v:-800,r:6});
+  }
+  cooldown=0.15; energy-=0.08;
+}
 
-  // AUTO FIRE
+let spawnT=0,last=performance.now();
+function loop(now){
+  const dt=Math.min(0.033,(now-last)/1000);last=now;
+  ctx.fillStyle="#070b1a";ctx.fillRect(0,0,W,H);
+
+  energy=Math.min(1,energy+dt*0.3);
+  cooldown=Math.max(0,cooldown-dt);
   shoot();
 
-  spawnTimer -= dt;
-  if (spawnTimer<=0){
-    spawnBarrier();
-    spawnTimer = 0.8;
+  if(weapon!=="normal"){
+    weaponTimer-=dt;
+    if(weaponTimer<=0){ weapon="normal"; weaponEl.textContent="عادي"; }
   }
 
-  bullets.forEach(b => b.y += b.v*dt);
-  barriers.forEach(br => br.y += 150*dt);
+  spawnT-=dt;
+  if(spawnT<=0){ spawn(); spawnT=0.8; }
 
-  // COLLISIONS
+  bullets.forEach(b=>{
+    b.y+=b.v*dt;
+    if(b.dx) b.x+=b.dx*400*dt;
+  });
+  objects.forEach(o=>o.y+=150*dt);
+
+  // collisions
   for(let i=bullets.length-1;i>=0;i--){
-    const b = bullets[i];
-    for(let j=barriers.length-1;j>=0;j--){
-      const br = barriers[j];
-      if (
-        b.x > br.x && b.x < br.x+br.w &&
-        b.y > br.y && b.y < br.y+br.h
-      ){
+    for(let j=objects.length-1;j>=0;j--){
+      const b=bullets[i],o=objects[j];
+      const d=Math.hypot(b.x-o.x,b.y-o.y);
+      if(d<o.r){
         bullets.splice(i,1);
-        br.hp--;
-        explode(b.x,b.y,0.6);
-        if(br.hp<=0){
-          explode(br.x+br.w/2, br.y+br.h/2,1.2);
-          barriers.splice(j,1);
-          score+=50;
+        objects.splice(j,1);
+        if(o.type==="barrier"){
+          broken++; brokenEl.textContent=broken;
+          explode(o.x,o.y,"#7fffb2");
+        }else{
+          weapon=o.kind;
+          weaponTimer=6;
+          weaponEl.textContent=o.kind==="laser"?"ليزر":"متناثر";
+          explode(o.x,o.y,"#ffd27d");
         }
         break;
       }
@@ -198,60 +196,48 @@ function update(dt){
   }
 
   particles.forEach(p=>{
-    p.life -= dt;
-    p.x += p.vx*dt;
-    p.y += p.vy*dt;
-    p.vy += 400*dt;
+    p.life-=dt;
+    p.x+=p.vx*dt;
+    p.y+=p.vy*dt;
   });
 
-  // CLEANUP
-  for(let i=particles.length-1;i>=0;i--)
-    if(particles[i].life<=0) particles.splice(i,1);
-}
+  bullets=bullets.filter(b=>b.y>-50);
+  particles=particles.filter(p=>p.life>0);
 
-// ================== DRAW ==================
-function draw(){
-  ctx.fillStyle="#0b1020";
-  ctx.fillRect(0,0,W,H);
-
-  // Player
+  // DRAW
   ctx.fillStyle="#7fffb2";
   ctx.beginPath();
-  ctx.moveTo(player.x, player.y-player.h/2);
-  ctx.lineTo(player.x+player.w/2, player.y+player.h/2);
-  ctx.lineTo(player.x-player.w/2, player.y+player.h/2);
-  ctx.closePath();
+  ctx.moveTo(player.x,player.y-20);
+  ctx.lineTo(player.x+20,player.y+20);
+  ctx.lineTo(player.x-20,player.y+20);
   ctx.fill();
 
-  // Bullets
-  ctx.fillStyle="#ffd27d";
   bullets.forEach(b=>{
+    ctx.strokeStyle=b.laser?"#ff3":"#ffd27d";
+    ctx.lineWidth=b.laser?3:1;
     ctx.beginPath();
-    ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
+    ctx.moveTo(b.x,b.y);
+    ctx.lineTo(b.x,b.y+15);
+    ctx.stroke();
+  });
+
+  objects.forEach(o=>{
+    const g=ctx.createRadialGradient(o.x,o.y,5,o.x,o.y,o.r);
+    g.addColorStop(0,o.type==="power"?"#fff":"#7fffb2");
+    g.addColorStop(1,"transparent");
+    ctx.fillStyle=g;
+    ctx.beginPath();
+    ctx.arc(o.x,o.y,o.r,0,Math.PI*2);
     ctx.fill();
   });
 
-  // Barriers
-  barriers.forEach(br=>{
-    ctx.fillStyle="rgba(255,255,255,0.12)";
-    ctx.fillRect(br.x,br.y,br.w,br.h);
-  });
-
-  // Particles
-  ctx.fillStyle="#ffb347";
   particles.forEach(p=>{
-    ctx.globalAlpha=p.life*2;
+    ctx.globalAlpha=p.life;
+    ctx.fillStyle=p.color;
     ctx.fillRect(p.x,p.y,4,4);
   });
   ctx.globalAlpha=1;
-}
 
-// ================== LOOP ==================
-function loop(now){
-  const dt = Math.min(0.033,(now-last)/1000);
-  last=now;
-  update(dt);
-  draw();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
