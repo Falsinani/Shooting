@@ -1,447 +1,260 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>Barrier Blaster</title>
-  <style>
-    html, body { margin:0; padding:0; height:100%; background:#0b1020; overflow:hidden; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
-    canvas { display:block; width:100vw; height:100vh; touch-action:none; }
+<meta charset="utf-8">
+<title>Barrier Blaster</title>
 
-    /* HUD */
-    .hud {
-      position: fixed; top: 10px; left: 10px; right: 10px;
-      display:flex; gap:10px; align-items:center; justify-content:space-between;
-      pointer-events:none;
-    }
-    .pill {
-      pointer-events:none;
-      color:#fff; background:rgba(255,255,255,0.08);
-      border:1px solid rgba(255,255,255,0.14);
-      padding:8px 12px; border-radius:999px;
-      backdrop-filter: blur(6px);
-      font-size:14px;
-      display:flex; gap:10px; align-items:center;
-    }
-    .barWrap { width: 160px; height: 10px; background: rgba(255,255,255,0.12); border-radius: 999px; overflow:hidden; }
-    .bar { height:100%; width:100%; background: rgba(120,255,180,0.9); }
+<meta name="viewport"
+content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 
-    /* Controls */
-    .controls {
-      position: fixed; left: 14px; right: 14px; bottom: 14px;
-      display:flex; justify-content:space-between; align-items:flex-end;
-      gap:12px;
-      user-select:none;
-    }
-    .pad { display:flex; gap:10px; }
-    .btn {
-      width:68px; height:68px; border-radius:18px;
-      background: rgba(255,255,255,0.08);
-      border:1px solid rgba(255,255,255,0.14);
-      color:#fff; font-size:18px;
-      display:flex; align-items:center; justify-content:center;
-      backdrop-filter: blur(6px);
-      touch-action: none;
-    }
-    .btn:active { transform: scale(0.98); }
-    .shoot { width:92px; height:92px; border-radius:22px; font-size:18px; }
-    .hint {
-      position: fixed; top: 54px; left: 10px; right: 10px;
-      color: rgba(255,255,255,0.65);
-      font-size:12px; text-align:center;
-      pointer-events:none;
-    }
-  </style>
+<style>
+html, body {
+  margin:0;
+  padding:0;
+  width:100%;
+  height:100%;
+  background:#0b1020;
+  overflow:hidden;
+  touch-action:none;
+  overscroll-behavior:none;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+}
+
+* {
+  -webkit-touch-callout:none;
+  -webkit-user-select:none;
+  user-select:none;
+}
+
+canvas {
+  width:100vw;
+  height:100vh;
+  display:block;
+}
+</style>
 </head>
+
 <body>
-  <canvas id="c"></canvas>
-
-  <div class="hud">
-    <div class="pill">
-      <span>النقاط: <b id="score">0</b></span>
-      <span>المرحلة: <b id="level">1</b></span>
-    </div>
-
-    <div class="pill">
-      <span>الطاقة</span>
-      <div class="barWrap"><div class="bar" id="energyBar"></div></div>
-      <span id="energyTxt">100%</span>
-    </div>
-  </div>
-
-  <div class="hint">كمبيوتر: ← → للحركة، Space للإطلاق • جوال: أزرار الحركة + إطلاق</div>
-
-  <div class="controls">
-    <div class="pad">
-      <div class="btn" id="leftBtn">◀</div>
-      <div class="btn" id="rightBtn">▶</div>
-    </div>
-    <div class="btn shoot" id="shootBtn">إطلاق</div>
-  </div>
+<canvas id="game"></canvas>
 
 <script>
-(() => {
-  // Prevent iOS double-tap zoom / bounce
-  document.addEventListener('gesturestart', e => e.preventDefault());
-  document.addEventListener('dblclick', e => e.preventDefault(), { passive:false });
+// ================== iOS SAFETY ==================
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault(), { passive:false });
 
-  const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
+// ================== CANVAS ==================
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+let W, H, DPR;
 
-  const scoreEl = document.getElementById('score');
-  const levelEl = document.getElementById('level');
-  const energyBar = document.getElementById('energyBar');
-  const energyTxt = document.getElementById('energyTxt');
+function resize(){
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth;
+  H = innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+addEventListener("resize", resize);
+resize();
 
-  let W=0, H=0, DPR=1;
-  function resize(){
-    DPR = Math.min(2, window.devicePixelRatio || 1);
-    W = Math.floor(innerWidth);
-    H = Math.floor(innerHeight);
-    canvas.width = Math.floor(W * DPR);
-    canvas.height = Math.floor(H * DPR);
-    canvas.style.width = W + 'px';
-    canvas.style.height = H + 'px';
-    ctx.setTransform(DPR,0,0,DPR,0,0);
+// ================== AUDIO ==================
+const bgMusic = new Audio(
+  "https://cdn.pixabay.com/audio/2022/10/26/audio_48c7baf798.mp3"
+);
+bgMusic.loop = true;
+bgMusic.volume = 0.35;
+let musicStarted = false;
+
+// ================== HAPTIC ==================
+function haptic(ms=20){
+  if (navigator.vibrate) navigator.vibrate(ms);
+}
+
+// ================== GAME STATE ==================
+let last = performance.now();
+let energy = 1;
+let cooldown = 0;
+
+const player = {
+  x: W/2,
+  y: H - 100,
+  w: 40,
+  h: 40
+};
+
+const bullets = [];
+const barriers = [];
+const particles = [];
+
+let score = 0;
+let spawnTimer = 0;
+
+// ================== INPUT (DRAG) ==================
+let dragging = false;
+let lastX = 0;
+
+canvas.addEventListener("pointerdown", e => {
+  dragging = true;
+  lastX = e.clientX;
+  canvas.setPointerCapture(e.pointerId);
+
+  if (!musicStarted){
+    bgMusic.play().catch(()=>{});
+    musicStarted = true;
   }
-  addEventListener('resize', resize);
-  resize();
+});
 
-  // Game state
-  let score = 0;
-  let level = 1;
-  let t = 0;
-  let running = true;
+canvas.addEventListener("pointermove", e => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX;
+  lastX = e.clientX;
 
-  // Player
-  const player = {
-    x: W/2, y: H - 110,
-    w: 42, h: 42,
-    vx: 0,
-    speed: 520, // px/sec
-    cooldown: 0
-  };
+  player.x += dx * 1.4;
+  player.x = Math.max(player.w/2+10, Math.min(W-player.w/2-10, player.x));
+});
 
-  // Energy
-  let energy = 1.0;              // 0..1
-  const energyRegen = 0.22;      // per sec
-  const shotCost = 0.08;         // per shot
-  const minEnergyToShoot = 0.10;
+canvas.addEventListener("pointerup", ()=> dragging=false);
+canvas.addEventListener("pointercancel", ()=> dragging=false);
 
-  // Bullets
-  const bullets = [];
-  // Barriers
-  const barriers = [];
-  // Particles (explosion)
-  const particles = [];
+// ================== HELPERS ==================
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const rnd = (a,b)=>a+Math.random()*(b-a);
 
-  // Difficulty
-  let barrierSpawnTimer = 0;
-  let barrierSpawnEvery = 0.75; // seconds
-  let barrierFallSpeed = 120;   // base px/sec
-  let barrierHPBase = 2;
+// ================== GAME LOGIC ==================
+function shoot(){
+  if (cooldown>0 || energy<0.08) return;
 
-  function clamp(v,a,b){ return Math.max(a, Math.min(b,v)); }
-  function rnd(a,b){ return a + Math.random()*(b-a); }
-
-  function spawnBarrier(){
-    const bw = rnd(54, 96);
-    const bh = rnd(34, 62);
-    const x = rnd(20, W - 20 - bw);
-    const y = -bh - 10;
-    const hp = Math.round(barrierHPBase + rnd(0, 2));
-    barriers.push({
-      x, y, w:bw, h:bh,
-      hp, hpMax: hp,
-      vx: rnd(-35, 35),
-      rot: rnd(-0.08, 0.08)
-    });
-  }
-
-  function explode(cx, cy, power=1){
-    const n = Math.floor(18 * power);
-    for(let i=0;i<n;i++){
-      particles.push({
-        x: cx, y: cy,
-        vx: rnd(-260, 260) * power,
-        vy: rnd(-260, 260) * power,
-        life: rnd(0.25, 0.6),
-        r: rnd(2,4) * power
-      });
-    }
-  }
-
-  function shoot(){
-    if (player.cooldown > 0) return;
-    if (energy < minEnergyToShoot) return;
-
-    energy = clamp(energy - shotCost, 0, 1);
-    player.cooldown = 0.12; // seconds
-
-    bullets.push({
-      x: player.x,
-      y: player.y - player.h/2 - 8,
-      r: 6,
-      vy: -780
-    });
-
-    // tiny muzzle burst
-    explode(player.x, player.y - player.h/2 - 10, 0.45);
-  }
-
-  // Input
-  const keys = { left:false, right:false, shoot:false };
-  addEventListener('keydown', (e)=>{
-    if(e.key === 'ArrowLeft') keys.left = true;
-    if(e.key === 'ArrowRight') keys.right = true;
-    if(e.code === 'Space') { keys.shoot = true; e.preventDefault(); }
-  }, { passive:false });
-  addEventListener('keyup', (e)=>{
-    if(e.key === 'ArrowLeft') keys.left = false;
-    if(e.key === 'ArrowRight') keys.right = false;
-    if(e.code === 'Space') keys.shoot = false;
+  bullets.push({
+    x: player.x,
+    y: player.y - 20,
+    r: 6,
+    v: -800
   });
 
-  // Touch buttons
-  function bindHold(btn, onDown, onUp){
-    btn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); btn.setPointerCapture(e.pointerId); onDown(); }, { passive:false });
-    btn.addEventListener('pointerup', (e)=>{ e.preventDefault(); onUp(); }, { passive:false });
-    btn.addEventListener('pointercancel', ()=> onUp());
-    btn.addEventListener('pointerout', ()=> onUp());
+  energy -= 0.08;
+  cooldown = 0.12;
+  haptic(10);
+}
+
+function spawnBarrier(){
+  barriers.push({
+    x: rnd(30, W-80),
+    y: -60,
+    w: rnd(50,90),
+    h: rnd(35,60),
+    hp: 3
+  });
+}
+
+function explode(x,y,power=1){
+  haptic(40);
+  for(let i=0;i<20*power;i++){
+    particles.push({
+      x,y,
+      vx:rnd(-300,300),
+      vy:rnd(-300,300),
+      life:rnd(0.3,0.6)
+    });
   }
-  bindHold(document.getElementById('leftBtn'), ()=> keys.left=true, ()=> keys.left=false);
-  bindHold(document.getElementById('rightBtn'), ()=> keys.right=true, ()=> keys.right=false);
-  bindHold(document.getElementById('shootBtn'), ()=> { keys.shoot=true; shoot(); }, ()=> keys.shoot=false);
+}
 
-  // Simple collision (circle vs rect)
-  function circleRectHit(cx,cy,cr, rx,ry,rw,rh){
-    const nx = clamp(cx, rx, rx+rw);
-    const ny = clamp(cy, ry, ry+rh);
-    const dx = cx - nx;
-    const dy = cy - ny;
-    return (dx*dx + dy*dy) <= cr*cr;
+function update(dt){
+  energy = clamp(energy + dt*0.25, 0, 1);
+  cooldown = Math.max(0, cooldown-dt);
+
+  // AUTO FIRE
+  shoot();
+
+  spawnTimer -= dt;
+  if (spawnTimer<=0){
+    spawnBarrier();
+    spawnTimer = 0.8;
   }
 
-  // Background stars
-  const stars = Array.from({length: 90}, () => ({ x: Math.random(), y: Math.random(), s: rnd(0.4, 1.2) }));
+  bullets.forEach(b => b.y += b.v*dt);
+  barriers.forEach(br => br.y += 150*dt);
 
-  function update(dt){
-    if(!running) return;
-    t += dt;
-
-    // Difficulty ramps every 20 seconds (5%)
-    if (Math.floor(t) % 20 === 0 && Math.abs((t % 20) - 0) < dt) {
-      barrierFallSpeed *= 1.05;
-      barrierSpawnEvery = Math.max(0.35, barrierSpawnEvery * 0.985);
-    }
-
-    // Level based on score
-    level = 1 + Math.floor(score / 250);
-    levelEl.textContent = level;
-
-    // Regen energy
-    energy = clamp(energy + energyRegen * dt, 0, 1);
-    energyBar.style.width = Math.round(energy*100) + '%';
-    energyTxt.textContent = Math.round(energy*100) + '%';
-
-    // Movement
-    player.vx = 0;
-    if(keys.left) player.vx -= player.speed;
-    if(keys.right) player.vx += player.speed;
-    player.x += player.vx * dt;
-    player.x = clamp(player.x, 20 + player.w/2, W - 20 - player.w/2);
-
-    // Shooting (allow hold: auto-fire-ish)
-    if(keys.shoot) shoot();
-    player.cooldown = Math.max(0, player.cooldown - dt);
-
-    // Spawn barriers
-    barrierSpawnTimer -= dt;
-    if(barrierSpawnTimer <= 0){
-      spawnBarrier();
-      // more barriers with higher level
-      if(level >= 3 && Math.random() < 0.25) spawnBarrier();
-      if(level >= 5 && Math.random() < 0.20) spawnBarrier();
-      barrierSpawnTimer = barrierSpawnEvery;
-    }
-
-    // Update bullets
-    for(let i=bullets.length-1;i>=0;i--){
-      const b = bullets[i];
-      b.y += b.vy * dt;
-      if(b.y < -40) bullets.splice(i,1);
-    }
-
-    // Update barriers
-    for(let i=barriers.length-1;i>=0;i--){
-      const br = barriers[i];
-      br.y += (barrierFallSpeed + level*16) * dt;
-      br.x += br.vx * dt;
-      // bounce on sides
-      if(br.x < 10){ br.x = 10; br.vx *= -1; }
-      if(br.x + br.w > W-10){ br.x = W-10-br.w; br.vx *= -1; }
-
-      // If barrier reaches bottom: lose score (arcade penalty)
-      if(br.y > H + 80){
-        barriers.splice(i,1);
-        score = Math.max(0, score - 25);
-        scoreEl.textContent = score;
-      }
-    }
-
-    // Bullet vs barrier collisions
-    for(let bi=bullets.length-1; bi>=0; bi--){
-      const b = bullets[bi];
-      let hit = false;
-      for(let i=barriers.length-1;i>=0;i--){
-        const br = barriers[i];
-        if(circleRectHit(b.x,b.y,b.r, br.x,br.y,br.w,br.h)){
-          hit = true;
-          br.hp -= 1;
-
-          // impact particles
-          explode(b.x, b.y, 0.65);
-
-          if(br.hp <= 0){
-            // barrier destroyed
-            explode(br.x + br.w/2, br.y + br.h/2, 1.25);
-            barriers.splice(i,1);
-            score += 40;
-          } else {
-            score += 10;
-          }
-          scoreEl.textContent = score;
-          break;
+  // COLLISIONS
+  for(let i=bullets.length-1;i>=0;i--){
+    const b = bullets[i];
+    for(let j=barriers.length-1;j>=0;j--){
+      const br = barriers[j];
+      if (
+        b.x > br.x && b.x < br.x+br.w &&
+        b.y > br.y && b.y < br.y+br.h
+      ){
+        bullets.splice(i,1);
+        br.hp--;
+        explode(b.x,b.y,0.6);
+        if(br.hp<=0){
+          explode(br.x+br.w/2, br.y+br.h/2,1.2);
+          barriers.splice(j,1);
+          score+=50;
         }
+        break;
       }
-      if(hit) bullets.splice(bi,1);
-    }
-
-    // Update particles
-    for(let i=particles.length-1;i>=0;i--){
-      const p = particles[i];
-      p.life -= dt;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vy += 520 * dt; // gravity-ish
-      p.vx *= (1 - 1.6*dt);
-      if(p.life <= 0) particles.splice(i,1);
     }
   }
 
-  function draw(){
-    // Background
-    ctx.fillStyle = '#0b1020';
-    ctx.fillRect(0,0,W,H);
+  particles.forEach(p=>{
+    p.life -= dt;
+    p.x += p.vx*dt;
+    p.y += p.vy*dt;
+    p.vy += 400*dt;
+  });
 
-    // Stars
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    for(const s of stars){
-      const x = s.x * W;
-      const y = ((s.y * H) + (t*18*s.s)) % H;
-      ctx.globalAlpha = 0.25 + 0.4*s.s;
-      ctx.fillRect(x, y, s.s*2.2, s.s*2.2);
-    }
-    ctx.globalAlpha = 1;
+  // CLEANUP
+  for(let i=particles.length-1;i>=0;i--)
+    if(particles[i].life<=0) particles.splice(i,1);
+}
 
-    // Player (simple ship)
-    ctx.save();
-    ctx.translate(player.x, player.y);
-    ctx.fillStyle = 'rgba(120,255,180,0.95)';
+// ================== DRAW ==================
+function draw(){
+  ctx.fillStyle="#0b1020";
+  ctx.fillRect(0,0,W,H);
+
+  // Player
+  ctx.fillStyle="#7fffb2";
+  ctx.beginPath();
+  ctx.moveTo(player.x, player.y-player.h/2);
+  ctx.lineTo(player.x+player.w/2, player.y+player.h/2);
+  ctx.lineTo(player.x-player.w/2, player.y+player.h/2);
+  ctx.closePath();
+  ctx.fill();
+
+  // Bullets
+  ctx.fillStyle="#ffd27d";
+  bullets.forEach(b=>{
     ctx.beginPath();
-    ctx.moveTo(0, -player.h/2);
-    ctx.lineTo(player.w/2, player.h/2);
-    ctx.lineTo(0, player.h/4);
-    ctx.lineTo(-player.w/2, player.h/2);
-    ctx.closePath();
+    ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
     ctx.fill();
+  });
 
-    // cockpit
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.beginPath();
-    ctx.ellipse(0, -6, 10, 14, 0, 0, Math.PI*2);
-    ctx.fill();
-    ctx.restore();
+  // Barriers
+  barriers.forEach(br=>{
+    ctx.fillStyle="rgba(255,255,255,0.12)";
+    ctx.fillRect(br.x,br.y,br.w,br.h);
+  });
 
-    // Bullets
-    for(const b of bullets){
-      ctx.fillStyle = 'rgba(255,220,120,0.95)';
-      ctx.beginPath();
-      ctx.arc(b.x,b.y,b.r,0,Math.PI*2);
-      ctx.fill();
-    }
+  // Particles
+  ctx.fillStyle="#ffb347";
+  particles.forEach(p=>{
+    ctx.globalAlpha=p.life*2;
+    ctx.fillRect(p.x,p.y,4,4);
+  });
+  ctx.globalAlpha=1;
+}
 
-    // Barriers
-    for(const br of barriers){
-      // body
-      ctx.save();
-      ctx.translate(br.x + br.w/2, br.y + br.h/2);
-      ctx.rotate(br.rot);
-      ctx.translate(-br.w/2, -br.h/2);
-
-      ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
-      roundRect(0,0, br.w, br.h, 10);
-      ctx.fill();
-      ctx.stroke();
-
-      // hazard stripes
-      ctx.globalAlpha = 0.35;
-      ctx.fillStyle = 'rgba(255,220,120,0.9)';
-      for(let k=0;k<6;k++){
-        ctx.fillRect(8 + k*14, 8, 8, br.h-16);
-      }
-      ctx.globalAlpha = 1;
-
-      // HP bar
-      const hpw = (br.w-16) * (br.hp / br.hpMax);
-      ctx.fillStyle = 'rgba(255,90,120,0.85)';
-      ctx.fillRect(8, br.h-10, hpw, 4);
-
-      ctx.restore();
-    }
-
-    // Particles
-    for(const p of particles){
-      ctx.globalAlpha = Math.max(0, p.life*2);
-      ctx.fillStyle = 'rgba(255,200,120,0.95)';
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    // Subtle vignette
-    const g = ctx.createRadialGradient(W/2,H/2, Math.min(W,H)*0.2, W/2,H/2, Math.min(W,H)*0.8);
-    g.addColorStop(0,'rgba(0,0,0,0)');
-    g.addColorStop(1,'rgba(0,0,0,0.35)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0,0,W,H);
-  }
-
-  function roundRect(x,y,w,h,r){
-    const rr = Math.min(r, w/2, h/2);
-    ctx.beginPath();
-    ctx.moveTo(x+rr, y);
-    ctx.arcTo(x+w, y, x+w, y+h, rr);
-    ctx.arcTo(x+w, y+h, x, y+h, rr);
-    ctx.arcTo(x, y+h, x, y, rr);
-    ctx.arcTo(x, y, x+w, y, rr);
-    ctx.closePath();
-  }
-
-  // Main loop
-  let last = performance.now();
-  function loop(now){
-    const dt = Math.min(0.033, (now-last)/1000);
-    last = now;
-    update(dt);
-    draw();
-    requestAnimationFrame(loop);
-  }
+// ================== LOOP ==================
+function loop(now){
+  const dt = Math.min(0.033,(now-last)/1000);
+  last=now;
+  update(dt);
+  draw();
   requestAnimationFrame(loop);
-
-})();
+}
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
