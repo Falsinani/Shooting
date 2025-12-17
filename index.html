@@ -588,7 +588,15 @@
     }
   }, {passive:false});
 
-  canvas.addEventListener('pointermove', (e)=>{
+  document.addEventListener('pointerdown', (e)=>{
+  unlockAudio();
+
+  if (state === STATE.MENU || state === STATE.OVER) {
+    start();
+  }
+
+  player.targetX = e.clientX;
+}, { passive:false });
     e.preventDefault();
     player.targetX = e.clientX;
   }, {passive:false});
