@@ -1,605 +1,233 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
-  <title>Space Shuttle Blaster</title>
-  <style>
-    html,body{margin:0;padding:0;height:100%;background:#05070b;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
-    canvas{display:block;width:100vw;height:100vh}
-    #hud{
-      position:fixed;top:0;left:0;right:0;
-      display:flex;justify-content:space-between;gap:10px;
-      padding:10px 12px;
-      pointer-events:none;
-      color:#eaf2ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Tahoma,Arial;
-      z-index:5;
-    }
-    .chip{
-      background:rgba(255,255,255,.08);
-      border:1px solid rgba(255,255,255,.14);
-      border-radius:14px;
-      padding:7px 10px;
-      backdrop-filter:blur(8px);
-      -webkit-backdrop-filter:blur(8px);
-      font-size:13px;
-      white-space:nowrap;
-    }
-    #overlay{
-      position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
-      background:rgba(0,0,0,.35);
-      z-index:10;
-    }
-    #card{
-      width:min(560px,92vw);
-      background:rgba(255,255,255,.08);
-      border:1px solid rgba(255,255,255,.15);
-      border-radius:18px;
-      padding:18px 16px;
-      color:#eaf2ff;
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,Tahoma,Arial;
-      text-align:center;
-      backdrop-filter:blur(10px);
-      -webkit-backdrop-filter:blur(10px);
-      box-shadow:0 18px 60px rgba(0,0,0,.5);
-    }
-    #card h1{margin:0 0 8px 0;font-size:22px}
-    #card p{margin:0 0 10px 0;opacity:.9;line-height:1.7;font-size:13px}
-    .kbd{display:inline-block;padding:2px 8px;border-radius:10px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.12)}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport"
+  content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Space Shuttle Blaster</title>
+
+<style>
+html,body{
+  margin:0;padding:0;height:100%;
+  background:#05070b;
+  overflow:hidden;
+  touch-action:none;
+  -webkit-user-select:none;
+  user-select:none
+}
+canvas{display:block;width:100vw;height:100vh}
+
+#hud{
+  position:fixed;top:0;left:0;right:0;
+  display:flex;justify-content:space-between;
+  padding:10px;
+  color:#eaf2ff;
+  font-family:system-ui;
+  pointer-events:none;
+  z-index:5
+}
+.chip{
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:14px;
+  padding:6px 10px;
+  font-size:13px
+}
+
+#overlay{
+  position:fixed;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.45);
+  z-index:10
+}
+#card{
+  width:min(520px,90vw);
+  background:rgba(255,255,255,.1);
+  border-radius:18px;
+  padding:18px;
+  text-align:center;
+  color:#fff;
+  backdrop-filter:blur(10px)
+}
+</style>
 </head>
+
 <body>
-  <canvas id="c"></canvas>
 
-  <div id="hud">
-    <div class="chip">💥 المحطمة: <b id="score">0</b> <span style="opacity:.55">|</span> 🏆 أفضل: <b id="best">0</b></div>
-    <div class="chip">🔫 <b id="weapon">NORMAL</b> <span id="wtime" style="opacity:.75"></span></div>
-    <div class="chip">⚡ طاقة: <b id="energy">100</b>%</div>
-  </div>
+<canvas id="c"></canvas>
 
-  <div id="overlay">
-    <div id="card">
-      <h1>Space Shuttle Blaster</h1>
-      <p>
-        👆 <span class="kbd">لمسة واحدة</span> لبدء اللعب وتشغيل الصوت<br>
-        اسحب للتحرك — الإطلاق تلقائي دائمًا<br>
-        التقط 🛰️/🛰️ لتغيير نوع الطلقات (8 ثوانٍ)
-      </p>
-      <p style="opacity:.75;margin:0">مهم: على iPhone الصوت لا يعمل إلا بعد أول لمسة (قيود المتصفح).</p>
-    </div>
+<div id="hud">
+  <div class="chip">💥 <b id="score">0</b></div>
+  <div class="chip">🔫 <b id="weapon">NORMAL</b></div>
+  <div class="chip">⚡ <b id="energy">100</b>%</div>
+</div>
+
+<div id="overlay">
+  <div id="card">
+    <h2>🚀 Space Shuttle Blaster</h2>
+    <p>👆 لمسة واحدة لبدء اللعب<br>
+    اسحب للتحرك — إطلاق تلقائي</p>
+    <p style="opacity:.7">الصوت يعمل بعد أول لمسة (iPhone)</p>
   </div>
+</div>
 
 <script>
 (() => {
-  /* ================= Canvas ================= */
-  const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d', { alpha:false });
 
-  let W=0,H=0,DPR=1;
-  function resize(){
-    DPR = Math.min(2, window.devicePixelRatio || 1);
-    W = Math.floor(innerWidth);
-    H = Math.floor(innerHeight);
-    canvas.width = Math.floor(W*DPR);
-    canvas.height = Math.floor(H*DPR);
-    canvas.style.width = W+'px';
-    canvas.style.height = H+'px';
-    ctx.setTransform(DPR,0,0,DPR,0,0);
-  }
-  addEventListener('resize', resize, {passive:true});
-  resize();
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+let W,H,DPR;
 
-  /* ================= Prevent zoom/select ================= */
-  addEventListener('contextmenu', e => e.preventDefault(), {passive:false});
-  addEventListener('selectstart', e => e.preventDefault(), {passive:false});
-  let lastTouchEnd=0;
-  addEventListener('touchend', (e)=>{
-    const now=Date.now();
-    if(now-lastTouchEnd<=250) e.preventDefault();
-    lastTouchEnd=now;
-  }, {passive:false});
+function resize(){
+  DPR = Math.min(2, devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  canvas.width = W*DPR; canvas.height = H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+addEventListener("resize", resize);
+resize();
 
-  /* ================= HUD ================= */
-  const elScore = document.getElementById('score');
-  const elBest  = document.getElementById('best');
-  const elWeapon= document.getElementById('weapon');
-  const elWtime = document.getElementById('wtime');
-  const elEnergy= document.getElementById('energy');
-  const overlay = document.getElementById('overlay');
+/* ========= Audio unlock (iOS) ========= */
+let audioCtx, unlocked=false;
+function unlockAudio(){
+  if(unlocked) return;
+  const AC = window.AudioContext||webkitAudioContext;
+  if(!AC) return;
+  audioCtx = new AC();
+  const b = audioCtx.createBuffer(1,1,audioCtx.sampleRate);
+  const s = audioCtx.createBufferSource();
+  s.buffer=b; s.connect(audioCtx.destination); s.start();
+  unlocked=true;
+}
+function sfx(){
+  if(!audioCtx) return;
+  const o=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  o.frequency.value=200;
+  g.gain.value=.05;
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime+.1);
+}
 
-  const STORAGE_KEY = 'ssb_best';
-  let best = Number(localStorage.getItem(STORAGE_KEY) || 0);
-  elBest.textContent = best;
+/* ========= Game state ========= */
+const STATE={MENU:0,PLAY:1};
+let state=STATE.MENU;
 
-  /* ================= Utils ================= */
-  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-  const rand=(a,b)=>a+Math.random()*(b-a);
-  const randi=(a,b)=>Math.floor(rand(a,b+1));
+const player={x:W/2,y:H-80,targetX:W/2};
+let bullets=[], asteroids=[];
+let score=0, energy=100;
 
-  /* ================= Assets (PUT YOUR PNGs HERE) =================
-     ضع الصور داخل مجلد assets بجانب index.html:
-     assets/asteroid1.png
-     assets/asteroid2.png
-     assets/satellite1.png
-     assets/satellite2.png
-     assets/station1.png
-  */
-  const images = {};
-  function loadImage(name, src){
-    const img = new Image();
-    img.src = src;
-    img.onload = () => { img._ready = true; };
-    img.onerror = () => { img._ready = false; };
-    images[name] = img;
-  }
-  loadImage('asteroid1','assets/asteroid1.png');
-  loadImage('asteroid2','assets/asteroid2.png');
-  loadImage('satellite1','assets/satellite1.png');
-  loadImage('satellite2','assets/satellite2.png');
-  loadImage('station1','assets/station1.png');
+const overlay=document.getElementById("overlay");
+const elScore=scoreEl=document.getElementById("score");
+const elEnergy=document.getElementById("energy");
+const elWeapon=document.getElementById("weapon");
 
-  /* ================= Audio (iOS safe unlock) ================= */
-  let audioCtx=null, unlocked=false;
-  function unlockAudio(){
-    if(unlocked) return;
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if(!AC) { unlocked=true; return; }
-    audioCtx = new AC();
-    // play a silent buffer to unlock
-    const b = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
-    const s = audioCtx.createBufferSource();
-    s.buffer = b;
-    s.connect(audioCtx.destination);
-    s.start(0);
-    if(audioCtx.state === 'suspended') audioCtx.resume();
-    unlocked = true;
-  }
-  function sfxShoot(kind='normal'){
-    if(!unlocked || !audioCtx) return;
-    const t = audioCtx.currentTime;
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = (kind==='laser') ? 'square' : 'sawtooth';
-    o.frequency.setValueAtTime(kind==='laser'? 650 : 190, t);
-    g.gain.setValueAtTime(kind==='laser'? 0.045 : 0.06, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + (kind==='laser'? 0.14 : 0.10));
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(t); o.stop(t+0.16);
-  }
-  function sfxBoom(){
-    if(!unlocked || !audioCtx) return;
-    const t = audioCtx.currentTime;
-    const len = Math.floor(audioCtx.sampleRate*0.25);
-    const b = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
-    const d = b.getChannelData(0);
-    for(let i=0;i<len;i++){
-      const k = 1 - i/len;
-      d[i] = (Math.random()*2-1) * (k*k);
-    }
-    const n = audioCtx.createBufferSource();
-    const g = audioCtx.createGain();
-    n.buffer=b;
-    g.gain.setValueAtTime(0.28, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t+0.22);
-    n.connect(g); g.connect(audioCtx.destination);
-    n.start(t);
-  }
-  function haptic(ms){ if(navigator.vibrate) navigator.vibrate(ms); }
+/* ========= Game logic ========= */
+function startGame(){
+  bullets=[]; asteroids=[];
+  score=0; energy=100;
+  elScore.textContent=0;
+  elEnergy.textContent=100;
+  elWeapon.textContent="NORMAL";
+  state=STATE.PLAY;
+  overlay.style.display="none";
+}
 
-  /* ================= Game ================= */
-  const STATE = { MENU:0, PLAY:1, OVER:2 };
-  let state = STATE.MENU;
+function spawnAsteroid(){
+  asteroids.push({
+    x:Math.random()*W,
+    y:-40,
+    r:20+Math.random()*20,
+    vy:120+Math.random()*80
+  });
+}
 
-  const player = { x: W/2, y: H-90, targetX: W/2, tilt: 0 };
+function shoot(){
+  bullets.push({x:player.x,y:player.y-20,vy:-500});
+  sfx();
+}
 
-  const rockets = [];   // bullets
-  const asteroids = [];
-  const drops = [];     // satellites/stations
+let shootCD=0, spawnCD=0;
+let last=performance.now();
 
-  let score = 0;
-  let energy = 100;
+function loop(t){
+  const dt=Math.min(.033,(t-last)/1000);
+  last=t;
 
-  const WEAP = { NORMAL:'NORMAL', LASER:'LASER', SPREAD:'SPREAD' };
-  let weapon = WEAP.NORMAL;
-  let weaponTimer = 0;
+  ctx.fillStyle="#05070b";
+  ctx.fillRect(0,0,W,H);
 
-  let shootCD = 0;
-  let spawnCD = 0;
+  if(state===STATE.PLAY){
 
-  function resetGame(){
-    rockets.length=0; asteroids.length=0; drops.length=0;
-    score=0; energy=100;
-    weapon=WEAP.NORMAL; weaponTimer=0;
-    elScore.textContent='0';
-    elEnergy.textContent='100';
-    elWeapon.textContent=weapon;
-    elWtime.textContent='';
-    player.x=W/2; player.y=H-90; player.targetX=player.x; player.tilt=0;
-    shootCD=0; spawnCD=0;
-  }
+    player.x += (player.targetX-player.x)*0.15;
 
-  function setWeapon(w, seconds=8){
-    weapon = w;
-    weaponTimer = seconds;
-    elWeapon.textContent = weapon;
-    elWtime.textContent = ` (${Math.ceil(weaponTimer)}s)`;
-  }
-
-  /* ================= Spawning ================= */
-  function spawnAsteroid(){
-    const size = rand(44, 72);
-    const img = Math.random() < 0.5 ? images.asteroid1 : images.asteroid2;
-    asteroids.push({
-      x: rand(40, W-40),
-      y: -60,
-      vy: rand(90, 160),
-      rot: rand(0, Math.PI*2),
-      vr: rand(-0.9, 0.9),
-      size,
-      img
-    });
-  }
-
-  function spawnDrop(x,y){
-    // randomly choose satellite or station (both are "powerups")
-    const isStation = Math.random() < 0.45;
-    const img = isStation ? images.station1 : (Math.random()<0.5 ? images.satellite1 : images.satellite2);
-    const type = isStation ? 'station' : 'satellite';
-
-    // decide weapon it grants
-    const grant = isStation ? WEAP.SPREAD : WEAP.LASER;
-
-    drops.push({
-      x, y,
-      vy: rand(75, 110),
-      rot: rand(0, Math.PI*2),
-      vr: rand(-0.6, 0.6),
-      size: isStation ? 60 : 52,
-      img,
-      type,
-      grant
-    });
-  }
-
-  /* ================= Drawing ================= */
-  function drawBackground(){
-    const g = ctx.createLinearGradient(0,0,0,H);
-    g.addColorStop(0,'#071028');
-    g.addColorStop(1,'#03050b');
-    ctx.fillStyle=g;
-    ctx.fillRect(0,0,W,H);
-
-    // subtle stars
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle='#fff';
-    const n = Math.floor((W*H)/52000);
-    for(let i=0;i<n;i++){
-      const x = (i*9973) % W;
-      const y = (i*7919 + Math.floor(performance.now()/40)) % H;
-      ctx.fillRect(x,y,1,1);
-    }
-    ctx.globalAlpha=1;
-  }
-
-  function drawImageCentered(img, x,y, size, rot){
-    if(img && img._ready){
-      ctx.save();
-      ctx.translate(x,y);
-      ctx.rotate(rot);
-      ctx.drawImage(img, -size/2, -size/2, size, size);
-      ctx.restore();
-      return true;
-    }
-    return false;
-  }
-
-  function drawShuttle(){
-    // simple realistic-ish shuttle (fallback until you add a shuttle PNG later)
-    ctx.save();
-    ctx.translate(player.x, player.y);
-    ctx.rotate(player.tilt);
-
-    // glow
-    ctx.shadowColor='rgba(170,230,255,.35)';
-    ctx.shadowBlur=18;
-
-    // body
-    ctx.fillStyle='#e7eef6';
-    ctx.beginPath();
-    ctx.moveTo(0,-24);
-    ctx.lineTo(10,18);
-    ctx.lineTo(0,14);
-    ctx.lineTo(-10,18);
-    ctx.closePath();
-    ctx.fill();
-
-    // wings
-    ctx.shadowBlur=0;
-    ctx.fillStyle='#b9c3cf';
-    ctx.fillRect(-18,5,36,4);
-
-    // engine flame (quiet realistic)
-    ctx.globalAlpha=0.7;
-    ctx.fillStyle='rgba(255,175,90,.55)';
-    ctx.beginPath();
-    ctx.moveTo(-4,18);
-    ctx.lineTo(0,28+Math.random()*4);
-    ctx.lineTo(4,18);
-    ctx.fill();
-    ctx.globalAlpha=1;
-
-    ctx.restore();
-  }
-
-  function drawRocket(b){
-    ctx.save();
-    ctx.translate(b.x, b.y);
-    ctx.rotate(b.rot);
-
-    if(b.kind === 'laser'){
-      ctx.shadowColor='rgba(120,255,255,.55)';
-      ctx.shadowBlur=14;
-      ctx.fillStyle='rgba(120,255,255,.95)';
-      ctx.fillRect(-2.2,-10,4.4,16);
-    } else {
-      ctx.shadowColor='rgba(255,255,255,.25)';
-      ctx.shadowBlur=10;
-      ctx.fillStyle='#fff';
-      ctx.fillRect(-2,-10,4,14);
-
-      // tiny flame
-      ctx.globalAlpha=0.55;
-      ctx.fillStyle='rgba(255,170,90,.55)';
-      ctx.beginPath();
-      ctx.moveTo(-2,4);
-      ctx.lineTo(0,10+Math.random()*3);
-      ctx.lineTo(2,4);
-      ctx.fill();
-      ctx.globalAlpha=1;
-    }
-    ctx.restore();
-  }
-
-  /* ================= Update ================= */
-  function gameOver(){
-    state = STATE.OVER;
-    overlay.style.display='flex';
-    document.getElementById('card').innerHTML = `
-      <h1>انتهت اللعبة</h1>
-      <p>💥 المحطمة: <b>${score}</b> — 🏆 أفضل: <b>${best}</b></p>
-      <p style="opacity:.9">👆 <span class="kbd">لمسة واحدة</span> لإعادة اللعب</p>
-    `;
-    haptic(60);
-  }
-
-  function damage(n){
-    energy = clamp(energy - n, 0, 100);
-    elEnergy.textContent = energy.toString();
-    if(energy<=0) gameOver();
-  }
-
-  function tick(dt){
-    // player
-    player.x += (player.targetX - player.x) * (1 - Math.pow(0.001, dt));
-    player.x = clamp(player.x, 30, W-30);
-    player.tilt = (player.targetX - player.x) * 0.002;
-
-    // weapon timer
-    if(weaponTimer > 0){
-      weaponTimer -= dt;
-      elWtime.textContent = ` (${Math.ceil(Math.max(0, weaponTimer))}s)`;
-      if(weaponTimer <= 0){
-        weapon = WEAP.NORMAL;
-        elWeapon.textContent = weapon;
-        elWtime.textContent = '';
-      }
+    shootCD-=dt;
+    if(shootCD<=0){
+      shootCD=.18;
+      shoot();
     }
 
-    // shooting (auto)
-    shootCD -= dt;
-    const fireRate = (weapon===WEAP.LASER) ? 0.14 : (weapon===WEAP.SPREAD ? 0.18 : 0.18);
-    if(shootCD <= 0){
-      shootCD = fireRate;
-
-      if(weapon === WEAP.SPREAD){
-        for(let i=-1;i<=1;i++){
-          rockets.push({ x: player.x + i*7, y: player.y-28, vy: -520, vx: i*65, rot: i*0.12, r: 10, kind:'normal', life: 1.2 });
-        }
-        sfxShoot('normal'); haptic(6);
-      } else if(weapon === WEAP.LASER){
-        rockets.push({ x: player.x, y: player.y-28, vy: -820, vx: 0, rot: 0, r: 12, kind:'laser', life: 1.05 });
-        sfxShoot('laser'); haptic(7);
-      } else {
-        rockets.push({ x: player.x, y: player.y-28, vy: -560, vx: 0, rot: 0, r: 12, kind:'normal', life: 1.2 });
-        sfxShoot('normal'); haptic(5);
-      }
-    }
-
-    // rockets
-    for(let i=rockets.length-1;i>=0;i--){
-      const b = rockets[i];
-      b.life -= dt;
-      b.x += (b.vx||0) * dt;
-      b.y += b.vy * dt;
-      if(b.life<=0 || b.y<-60 || b.x<-60 || b.x>W+60) rockets.splice(i,1);
-    }
-
-    // spawn asteroids
-    spawnCD -= dt;
-    const spawnRate = 0.55;
-    if(spawnCD <= 0){
-      spawnCD = rand(spawnRate*0.7, spawnRate*1.15);
+    spawnCD-=dt;
+    if(spawnCD<=0){
+      spawnCD=.6;
       spawnAsteroid();
-      if(Math.random()<0.12) spawnAsteroid();
     }
 
-    // asteroids
-    for(let i=asteroids.length-1;i>=0;i--){
-      const a = asteroids[i];
-      a.y += a.vy*dt;
-      a.rot += a.vr*dt;
+    bullets.forEach(b=>b.y+=b.vy*dt);
+    bullets=bullets.filter(b=>b.y>-50);
 
-      // bottom => damage
-      if(a.y > H + 80){
-        asteroids.splice(i,1);
-        damage(10);
-        sfxBoom(); haptic(18);
-        continue;
-      }
+    asteroids.forEach(a=>a.y+=a.vy*dt);
+    asteroids=asteroids.filter(a=>a.y<H+60);
 
-      // collision with player
-      const pr = 18;
-      const ar = a.size*0.38;
-      const dx = a.x - player.x, dy = a.y - player.y;
-      if(dx*dx + dy*dy < (pr+ar)*(pr+ar)){
-        asteroids.splice(i,1);
-        damage(22);
-        sfxBoom(); haptic(45);
-        continue;
-      }
-    }
-
-    // drops
-    for(let i=drops.length-1;i>=0;i--){
-      const d = drops[i];
-      d.y += d.vy*dt;
-      d.rot += d.vr*dt;
-      if(d.y > H + 80){ drops.splice(i,1); continue; }
-
-      // pickup
-      const rr = d.size*0.38 + 18;
-      const dx = d.x - player.x, dy = d.y - player.y;
-      if(dx*dx + dy*dy < rr*rr){
-        setWeapon(d.grant, 8);
-        drops.splice(i,1);
-        haptic(25);
-      }
-    }
-
-    // rocket vs asteroid
-    for(let ai=asteroids.length-1; ai>=0; ai--){
-      const a = asteroids[ai];
-      const ar = a.size*0.40;
-
-      for(let bi=rockets.length-1; bi>=0; bi--){
-        const b = rockets[bi];
-        const br = (b.kind==='laser') ? 10 : 9;
-        const dx = a.x - b.x, dy = a.y - b.y;
-        if(dx*dx + dy*dy < (ar+br)*(ar+br)){
-          // destroy
-          asteroids.splice(ai,1);
-          rockets.splice(bi,1);
-
-          score++;
-          elScore.textContent = score.toString();
-          if(score > best){
-            best = score;
-            localStorage.setItem(STORAGE_KEY, String(best));
-            elBest.textContent = String(best);
-          }
-
-          sfxBoom(); haptic(20);
-
-          // chance to drop powerup object (satellite/station image)
-          if(Math.random() < 0.32){
-            spawnDrop(a.x, a.y);
-          }
-          break;
+    for(let a of asteroids){
+      for(let b of bullets){
+        const dx=a.x-b.x, dy=a.y-b.y;
+        if(dx*dx+dy*dy<a.r*a.r){
+          score++; elScore.textContent=score;
+          a.y=H+100; b.y=-100;
         }
       }
     }
   }
 
-  function render(){
-    drawBackground();
+  // draw
+  ctx.fillStyle="#fff";
+  ctx.beginPath();
+  ctx.moveTo(player.x,player.y-20);
+  ctx.lineTo(player.x+10,player.y+20);
+  ctx.lineTo(player.x-10,player.y+20);
+  ctx.fill();
 
-    // draw asteroids (images)
-    for(const a of asteroids){
-      const ok = drawImageCentered(a.img, a.x, a.y, a.size, a.rot);
-      if(!ok){
-        // fallback shape if image missing
-        ctx.save();
-        ctx.translate(a.x,a.y); ctx.rotate(a.rot);
-        ctx.fillStyle='#6b6763';
-        ctx.beginPath(); ctx.arc(0,0,a.size*0.42,0,Math.PI*2); ctx.fill();
-        ctx.restore();
-      }
-    }
+  ctx.fillStyle="#f33";
+  asteroids.forEach(a=>{
+    ctx.beginPath();
+    ctx.arc(a.x,a.y,a.r,0,Math.PI*2);
+    ctx.fill();
+  });
 
-    // drops (images)
-    for(const d of drops){
-      const ok = drawImageCentered(d.img, d.x, d.y, d.size, d.rot);
-      if(!ok){
-        ctx.save();
-        ctx.translate(d.x,d.y); ctx.rotate(d.rot);
-        ctx.fillStyle='rgba(210,220,235,.9)';
-        ctx.beginPath(); ctx.arc(0,0,14,0,Math.PI*2); ctx.fill();
-        ctx.restore();
-      }
-    }
+  ctx.fillStyle="#0ff";
+  bullets.forEach(b=>{
+    ctx.fillRect(b.x-2,b.y-8,4,12);
+  });
 
-    // rockets
-    for(const b of rockets) drawRocket(b);
-
-    // player
-    drawShuttle();
-
-    // small vignette
-    ctx.save();
-    const vg = ctx.createRadialGradient(W/2,H*0.7,Math.min(W,H)*0.1,W/2,H*0.7,Math.max(W,H)*0.9);
-    vg.addColorStop(0,'rgba(0,0,0,0)');
-    vg.addColorStop(1,'rgba(0,0,0,0.42)');
-    ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
-    ctx.restore();
-  }
-
-  /* ================= Loop ================= */
-  let last = performance.now();
-  function loop(t){
-    const dt = Math.min(0.033, (t-last)/1000 || 0);
-    last = t;
-
-    if(state === STATE.PLAY){
-      tick(dt);
-    }
-    render();
-    requestAnimationFrame(loop);
-  }
   requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
 
-  /* ================= Start / Input ================= */
-  function start(){
-    unlockAudio();
-    resize();
-    resetGame();
-    state = STATE.PLAY;
-    overlay.style.display='none';
-  }
-
-  canvas.addEventListener('pointerdown', (e)=>{
-    e.preventDefault();
-    player.targetX = e.clientX;
-
-    if(state === STATE.MENU || state === STATE.OVER){
-      start();
-    } else {
-      // keep playing
-      unlockAudio();
-    }
-  }, {passive:false});
-
-  document.addEventListener('pointerdown', (e)=>{
+/* ========= INPUT (الحل النهائي) ========= */
+document.addEventListener("pointerdown", e=>{
   unlockAudio();
-
-  if (state === STATE.MENU || state === STATE.OVER) {
-    start();
+  if(state===STATE.MENU){
+    startGame();
   }
+  player.targetX=e.clientX;
+},{passive:false});
 
-  player.targetX = e.clientX;
-}, { passive:false });
-    e.preventDefault();
-    player.targetX = e.clientX;
-  }, {passive:false});
+document.addEventListener("pointermove", e=>{
+  if(state===STATE.PLAY){
+    player.targetX=e.clientX;
+  }
+},{passive:false});
 
 })();
 </script>
